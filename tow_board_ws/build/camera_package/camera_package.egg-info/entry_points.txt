@@ -1,0 +1,3 @@
+[console_scripts]
+camera_node = camera_package.camera_node:main
+
