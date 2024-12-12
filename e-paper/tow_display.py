@@ -19,6 +19,7 @@ import time
 from PIL import Image,ImageDraw,ImageFont
 import traceback
 
+
 logging.basicConfig(level=logging.DEBUG)
 
 class Epaper:
@@ -60,7 +61,8 @@ class Epaper:
         self.now = datetime.datetime.now()
         self.start_time = self.now
         self.mission_length_secs = 1 * 60
-        self.time_x = 100
+        self.track_time = self.now - self.start_time
+        self.time_x = 100 #100
         self.time_y = self.epd.width - 45
         self.time_font=ImageFont.truetype(os.path.join(picdir, 'Font.ttc'), 24)
   
@@ -71,17 +73,21 @@ class Epaper:
         epd3in52.epdconfig.module_exit(cleanup=True)
 
     def new_msg(self, msg = "", pos = 1):
+        logging.info(f"New message: {msg}, pos:{pos}")
         self.draw.text((self.msg[f"x_{pos}"], self.msg[f"y_{pos}"]), self.msg[f"current_{pos}"], font = self.msg[f"font_{pos}"], fill = 1)
         self.draw.text((self.msg[f"x_{pos}"], self.msg[f"y_{pos}"]), msg, font = self.msg[f"font_{pos}"], fill = 0)
         self.msg[f"current_{pos}"]=msg
 
     def update_message(self):
+        logging.info(f"Updateing message..Screen!")
         self.epd.display(self.epd.getbuffer(self.Himage))
 #        self.epd.lut_GC()
         self.epd.lut_DU()
         self.epd.refresh()
 
     def draw_heart(self,x, y, size, color):
+        
+        logging.info(f"Drawing heart...")
         # Left curve
         self.draw.arc((x, y - (size/2), x + size, y + (size/2)), 180, 360, fill=color)
         self.draw.pieslice((x, y - (size/2), x + size, y + (size/2)), 180, 360, fill=color)
@@ -92,47 +98,78 @@ class Epaper:
         self.draw.polygon([(x, y), (x + size, y + size), (x + 2 * size, y)], fill=color)
 
     def update_depth(self,new_depth):
+        logging.info(f"Updating depth: {new_depth}")
         self.draw.text((self.depth_x, self.depth_y), f"{self.depth_header} {self.depth_m}", font = self.depth_font, fill = 1)
         self.draw.text((self.depth_x, self.depth_y), f"{self.depth_header} {new_depth}", font = self.depth_font, fill = 0)
         self.depth_m = new_depth
    
     def update_time(self):
-        self.draw.text((self.time_x, self.time_y), f"{self.now.strftime('%H:%M:%S')}", font = self.time_font, fill = 1)
-        self.now = datetime.datetime.now()
-        self.draw.text((self.time_x, self.time_y), f"{self.now.strftime('%H:%M:%S')}", font = self.time_font, fill = 0)
+        logging.info(f"Updating time....")
+        # Calculate hours, minutes, seconds from the timedelta object
+        hours, remainder = divmod(self.track_time.total_seconds(), 3600)
+        minutes, seconds = divmod(remainder, 60)
+        formatted_time_difference = f"{int(hours):02d}:{int(minutes):02d}:{int(seconds):02d}"
+        # self.draw.text((self.time_x, self.time_y), f"{self.now.strftime('%H:%M:%S')}", font = self.time_font, fill = 1)
+        self.draw.text((self.time_x, self.time_y), f"{formatted_time_difference}", font = self.time_font, fill = 1)
+        # self.now = datetime.datetime.now()
+        self.track_time = datetime.datetime.now() - self.start_time
+        # Calculate hours, minutes, seconds from the timedelta object
+        hours, remainder = divmod(self.track_time.total_seconds(), 3600)
+        minutes, seconds = divmod(remainder, 60)
+        formatted_time_difference = f"{int(hours):02d}:{int(minutes):02d}:{int(seconds):02d}"
+        # self.draw.text((self.time_x, self.time_y), f"{self.now.strftime('%H:%M:%S')}", font = self.time_font, fill = 0)
+        self.draw.text((self.time_x, self.time_y), f"{formatted_time_difference}", font = self.time_font, fill = 0)
 
     def map_value(self, value, from_min, from_max, to_min, to_max):
         """Maps a value from one range to another."""
         return int((value - from_min) * (to_max - to_min) / (from_max - from_min) + to_min)
 
     def update_track(self):
-        difference = self.now-self.start_time
-        difference_in_secs = int(difference.total_seconds())
-        goto_length = self.map_value(difference_in_secs,0,self.mission_length_secs,0,self.epd.height - 20 - 20)
-        print(f"diff: {difference_in_secs}, {self.epd.height - 20 - 20}, {goto_length}")
+        logging.info(f"Updating track....")
+        # difference = self.now-self.start_time
+        # difference = int(self.track_time.total_seconds())
+        # difference_in_secs = int(difference.total_seconds())
+        # goto_length = self.map_value(difference_in_secs,0,self.mission_length_secs,0,self.epd.height - 20 - 20)
+        goto_length = self.map_value(int(self.track_time.total_seconds()),0,self.mission_length_secs,0,self.epd.height - 20 - 20)
+        # print(f"diff: {difference_in_secs}, {self.epd.height - 20 - 20}, {goto_length}, {int(self.track_time.total_seconds())}")
+        print(f"diff: {int(self.track_time.total_seconds())}, {self.epd.height - 20 - 20}, {goto_length}, {int(self.track_time.total_seconds())}")
         self.draw.rectangle((20, self.epd.width - 15, self.epd.height - 20, self.epd.width - 5), outline = 0)
-        if difference_in_secs < self.mission_length_secs:
+        # if difference_in_secs < self.mission_length_secs:
+        if int(self.track_time.total_seconds()) < self.mission_length_secs:
             self.draw.rectangle((20, self.epd.width - 15, 20 + goto_length, self.epd.width - 5), fill = 0)
         else: 
             self.draw.rectangle((20, self.epd.width - 15, 340, self.epd.width - 5), fill = 0)
 
+    def update_all(self):
+        self.update_time()
+        self.update_track()
+        self.update_message()
+            
 
 test = Epaper()
 test.update_time()
-test.new_msg("Hello World!",1)
-test.new_msg("Hello World!",2)
-test.new_msg("Hello World!",3)
+test.new_msg("Are you OK?",1)
+test.new_msg("1. YES  2. NO",2)
+test.new_msg("Waiting......",3)
 test.draw_heart(6, test.epd.width - 35, 15, 0)
 test.update_depth(30)
 test.update_track()
 test.update_message()
 time.sleep(5)
 test.update_time()
-test.new_msg("sup!",2)
+test.new_msg("Sounds good!",2)
+test.new_msg("Message received.",3)
 test.draw_heart(6, test.epd.width - 35, 15, 1)
 test.update_depth(35)
 test.update_track()
 test.update_message()
+time.sleep(5)
+test.draw_heart(6, test.epd.width - 35, 15, 0)
+
+for i in range(10):
+    test.update_all()
+    time.sleep(5)
+
 
 test.shutdown()
 exit()
